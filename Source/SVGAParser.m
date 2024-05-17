@@ -65,6 +65,15 @@ static NSOperationQueue *unzipQueue;
         }];
         return;
     }
+    SVGAVideoEntity *cacheItem = [SVGAVideoEntity readCache:[self cacheKey:URLRequest.URL]];
+    if (cacheItem != nil) {
+        if (completionBlock) {
+            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+                completionBlock(cacheItem);
+            }];
+        }
+        return;
+    }
     [[[NSURLSession sharedSession] dataTaskWithRequest:URLRequest completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         if (error == nil && data != nil) {
             [self parseWithData:data cacheKey:[self cacheKey:URLRequest.URL] completionBlock:^(SVGAVideoEntity * _Nonnull videoItem) {
