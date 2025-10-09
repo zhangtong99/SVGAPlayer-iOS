@@ -66,7 +66,7 @@
     if (bitmap != nil) {
         layer.bitmapLayer = [[SVGABitmapLayer alloc] initWithFrames:self.frames];
         layer.bitmapLayer.contents = (__bridge id _Nullable)([bitmap CGImage]);
-        layer.bitmapLayer.contentsGravity = kCAGravityResizeAspectFill;
+        layer.bitmapLayer.contentsGravity = kCAGravityResizeAspect;
     }
     layer.vectorLayer = [[SVGAVectorLayer alloc] initWithFrames:self.frames];
     return layer;
