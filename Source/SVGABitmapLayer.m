@@ -24,7 +24,8 @@
     if (self) {
         self.backgroundColor = [UIColor clearColor].CGColor;
         self.masksToBounds = NO;
-        self.contentsGravity = kCAGravityResizeAspect;
+        // 此处代码会导致替换的图片不能达到理想的视觉大小
+//        self.contentsGravity = kCAGravityResizeAspect;
         _frames = frames;
         [self stepToFrame:0];
     }
