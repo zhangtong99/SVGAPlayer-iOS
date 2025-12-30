@@ -13,15 +13,15 @@
 
 @interface SVGAVideoSpriteFrameEntity ()
 
-@property (nonatomic, strong) SVGAVideoSpriteFrameEntity *previousFrame;
+//@property (nonatomic, strong) SVGAVideoSpriteFrameEntity *previousFrame;
 @property (nonatomic, assign) CGFloat alpha;
 @property (nonatomic, assign) CGAffineTransform transform;
 @property (nonatomic, assign) CGRect layout;
 @property (nonatomic, assign) CGFloat nx;
 @property (nonatomic, assign) CGFloat ny;
-@property (nonatomic, strong) NSString *clipPath;
+@property (nonatomic, copy) NSString *clipPath;
 @property (nonatomic, strong) CALayer *maskLayer;
-@property (nonatomic, strong) NSArray *shapes;
+@property (nonatomic, copy) NSArray *shapes;
 
 @end
 
@@ -133,6 +133,15 @@
         _maskLayer = [bezierPath createLayer];
     }
     return _maskLayer;
+}
+
+- (void)dealloc {
+    if (_maskLayer) {
+        [_maskLayer removeFromSuperlayer];
+        _maskLayer = nil;
+    }
+    _clipPath = nil;
+    _shapes = nil;
 }
 
 @end
