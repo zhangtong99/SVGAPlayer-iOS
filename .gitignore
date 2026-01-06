@@ -2,3 +2,4 @@ Pods
 UserInterface.xcuserstate
 xcuserdata/
 *.lock
+.DS_Store
