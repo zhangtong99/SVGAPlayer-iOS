@@ -14,6 +14,8 @@
 
 @property (nonatomic, assign) BOOL enabledMemoryCache;
 
+- (nonnull NSString *)cacheKey:(NSURL *_Nullable)URL;
+
 - (void)parseWithURL:(nonnull NSURL *)URL
      completionBlock:(void ( ^ _Nonnull )(SVGAVideoEntity * _Nullable videoItem))completionBlock
         failureBlock:(void ( ^ _Nullable)(NSError * _Nullable error))failureBlock;

@@ -48,15 +48,16 @@ static NSOperationQueue *unzipQueue;
         }
         return;
     }
-    if ([[NSFileManager defaultManager] fileExistsAtPath:[self cacheDirectory:[self cacheKey:URLRequest.URL]]]) {
-        [self parseWithCacheKey:[self cacheKey:URLRequest.URL] completionBlock:^(SVGAVideoEntity * _Nonnull videoItem) {
+    NSString *cacheKey = [self cacheKey:URLRequest.URL];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:[self cacheDirectory:cacheKey]]) {
+        [self parseWithCacheKey:cacheKey completionBlock:^(SVGAVideoEntity * _Nonnull videoItem) {
             if (completionBlock) {
                 [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                     completionBlock(videoItem);
                 }];
             }
         } failureBlock:^(NSError * _Nonnull error) {
-            [self clearCache:[self cacheKey:URLRequest.URL]];
+            [self clearCache:cacheKey];
             if (failureBlock) {
                 [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                     failureBlock(error);
@@ -65,7 +66,7 @@ static NSOperationQueue *unzipQueue;
         }];
         return;
     }
-    SVGAVideoEntity *cacheItem = [SVGAVideoEntity readCache:[self cacheKey:URLRequest.URL]];
+    SVGAVideoEntity *cacheItem = [SVGAVideoEntity readCache:cacheKey];
     if (cacheItem != nil) {
         if (completionBlock) {
             [[NSOperationQueue mainQueue] addOperationWithBlock:^{
@@ -76,14 +77,14 @@ static NSOperationQueue *unzipQueue;
     }
     [[[NSURLSession sharedSession] dataTaskWithRequest:URLRequest completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         if (error == nil && data != nil) {
-            [self parseWithData:data cacheKey:[self cacheKey:URLRequest.URL] completionBlock:^(SVGAVideoEntity * _Nonnull videoItem) {
+            [self parseWithData:data cacheKey:cacheKey completionBlock:^(SVGAVideoEntity * _Nonnull videoItem) {
                 if (completionBlock) {
                     [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                         completionBlock(videoItem);
                     }];
                 }
             } failureBlock:^(NSError * _Nonnull error) {
-                [self clearCache:[self cacheKey:URLRequest.URL]];
+                [self clearCache:cacheKey];
                 if (failureBlock) {
                     [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                         failureBlock(error);
