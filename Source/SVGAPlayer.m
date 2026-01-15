@@ -83,7 +83,7 @@
         return;
     }
     self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(next)];
-    self.displayLink.frameInterval = 60 / self.videoItem.FPS;
+    self.displayLink.preferredFramesPerSecond = 60 / self.videoItem.FPS;
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.mainRunLoopMode];
     self.forwardAnimating = !self.reversing;
 }
@@ -112,7 +112,7 @@
     }
     self.forwardAnimating = !self.reversing;
     self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(next)];
-    self.displayLink.frameInterval = 60 / self.videoItem.FPS;
+    self.displayLink.preferredFramesPerSecond = 60 / self.videoItem.FPS;
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.mainRunLoopMode];
 }
 
@@ -171,7 +171,7 @@
             return;
         }
         self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(next)];
-        self.displayLink.frameInterval = 60 / self.videoItem.FPS;
+        self.displayLink.preferredFramesPerSecond = 60 / self.videoItem.FPS;
         [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.mainRunLoopMode];
     }
 }
@@ -408,6 +408,9 @@
 }
 
 - (void)setVideoItem:(SVGAVideoEntity *)videoItem {
+    if (_videoItem == videoItem) {
+        return;
+    }
     _videoItem = videoItem;
     _currentRange = NSMakeRange(0, videoItem.frames);
     _reversing = NO;
