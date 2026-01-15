@@ -408,9 +408,9 @@
 }
 
 - (void)setVideoItem:(SVGAVideoEntity *)videoItem {
-    if (_videoItem == videoItem) {
-        return;
-    }
+//    if (_videoItem == videoItem) {
+//        return;
+//    }
     _videoItem = videoItem;
     _currentRange = NSMakeRange(0, videoItem.frames);
     _reversing = NO;
