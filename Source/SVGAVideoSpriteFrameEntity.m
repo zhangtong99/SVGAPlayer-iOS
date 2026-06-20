@@ -21,6 +21,7 @@
 @property (nonatomic, assign) CGFloat ny;
 @property (nonatomic, copy) NSString *clipPath;
 @property (nonatomic, strong) CALayer *maskLayer;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, CALayer *> *scaledMaskLayers;
 @property (nonatomic, copy) NSArray *shapes;
 
 @end
@@ -135,11 +136,63 @@
     return _maskLayer;
 }
 
+- (CGRect)layoutForRenderScale:(CGFloat)renderScale {
+    if (renderScale <= 0 || renderScale == 1) return self.layout;
+    return CGRectMake(self.layout.origin.x * renderScale,
+                      self.layout.origin.y * renderScale,
+                      self.layout.size.width * renderScale,
+                      self.layout.size.height * renderScale);
+}
+
+- (CGAffineTransform)transformForRenderScale:(CGFloat)renderScale {
+    if (renderScale <= 0 || renderScale == 1) return self.transform;
+    CGAffineTransform transform = self.transform;
+    transform.tx *= renderScale;
+    transform.ty *= renderScale;
+    return transform;
+}
+
+- (CGFloat)nxForRenderScale:(CGFloat)renderScale {
+    if (renderScale <= 0 || renderScale == 1) return self.nx;
+    return self.nx * renderScale;
+}
+
+- (CGFloat)nyForRenderScale:(CGFloat)renderScale {
+    if (renderScale <= 0 || renderScale == 1) return self.ny;
+    return self.ny * renderScale;
+}
+
+- (CALayer *)maskLayerForRenderScale:(CGFloat)renderScale {
+    if (self.clipPath == nil) return nil;
+    if (renderScale <= 0 || renderScale == 1) return self.maskLayer;
+
+    NSString *cacheKey = [NSString stringWithFormat:@"%.4f", renderScale];
+    CALayer *cachedLayer = self.scaledMaskLayers[cacheKey];
+    if (cachedLayer != nil) return cachedLayer;
+
+    SVGABezierPath *bezierPath = [[SVGABezierPath alloc] init];
+    bezierPath.renderScale = renderScale;
+    [bezierPath setValues:self.clipPath];
+    CALayer *maskLayer = [bezierPath createLayer];
+    if (maskLayer != nil) {
+        self.scaledMaskLayers[cacheKey] = maskLayer;
+    }
+    return maskLayer;
+}
+
+- (NSMutableDictionary<NSString *,CALayer *> *)scaledMaskLayers {
+    if (_scaledMaskLayers == nil) {
+        _scaledMaskLayers = [NSMutableDictionary dictionary];
+    }
+    return _scaledMaskLayers;
+}
+
 - (void)dealloc {
     if (_maskLayer) {
         [_maskLayer removeFromSuperlayer];
         _maskLayer = nil;
     }
+    [_scaledMaskLayers removeAllObjects];
     _clipPath = nil;
     _shapes = nil;
 }

@@ -11,6 +11,8 @@
 
 @interface SVGABezierPath : UIBezierPath
 
+@property (nonatomic, assign) CGFloat renderScale;
+
 - (void)setValues:(nonnull NSString *)values;
 
 - (nonnull CAShapeLayer *)createLayer;

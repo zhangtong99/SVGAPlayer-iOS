@@ -16,17 +16,23 @@
 @property (nonatomic, strong) NSArray<SVGAVideoSpriteFrameEntity *> *frames;
 @property (nonatomic, assign) NSInteger drawedFrame;
 @property (nonatomic, strong) NSDictionary *keepFrameCache;
+@property (nonatomic, assign) CGFloat renderScale;
 
 @end
 
 @implementation SVGAVectorLayer
 
 - (instancetype)initWithFrames:(NSArray *)frames {
+    return [self initWithFrames:frames renderScale:1.0];
+}
+
+- (instancetype)initWithFrames:(NSArray *)frames renderScale:(CGFloat)renderScale {
     self = [super init];
     if (self) {
         self.backgroundColor = [UIColor clearColor].CGColor;
         self.masksToBounds = NO;
         _frames = frames;
+        _renderScale = renderScale > 0 ? renderScale : 1.0;
         _keepFrameCache = [NSMutableDictionary dictionary];
         [self resetKeepFrameCache];
         [self stepToFrame:0];
@@ -119,6 +125,7 @@
 
 - (CALayer *)createCurveLayer:(NSDictionary *)shape {
     SVGABezierPath *bezierPath = [SVGABezierPath new];
+    bezierPath.renderScale = self.renderScale;
     if ([shape[@"args"] isKindOfClass:[NSDictionary class]]) {
         if ([shape[@"args"][@"d"] isKindOfClass:[NSString class]]) {
             [bezierPath setValues:shape[@"args"][@"d"]];
@@ -132,6 +139,7 @@
 
 - (CALayer *)createCurveLayerWithProto:(SVGAProtoShapeEntity *)shape {
     SVGABezierPath *bezierPath = [SVGABezierPath new];
+    bezierPath.renderScale = self.renderScale;
     if (shape.argsOneOfCase == SVGAProtoShapeEntity_Args_OneOfCase_Shape) {
         if ([shape.shape.d isKindOfClass:[NSString class]] && shape.shape.d.length > 0) {
             [bezierPath setValues:shape.shape.d];
@@ -154,6 +162,10 @@
             CGFloat y = [shape[@"args"][@"y"] floatValue];
             CGFloat rx = [shape[@"args"][@"radiusX"] floatValue];
             CGFloat ry = [shape[@"args"][@"radiusY"] floatValue];
+            x *= self.renderScale;
+            y *= self.renderScale;
+            rx *= self.renderScale;
+            ry *= self.renderScale;
             bezierPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(x - rx, y - ry, rx * 2, ry * 2)];
         }
     }
@@ -172,10 +184,11 @@
 - (CALayer *)createEllipseLayerWithProto:(SVGAProtoShapeEntity *)shape {
     UIBezierPath *bezierPath;
     if (shape.argsOneOfCase == SVGAProtoShapeEntity_Args_OneOfCase_Ellipse) {
-        bezierPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(shape.ellipse.x - shape.ellipse.radiusX,
-                                                                       shape.ellipse.y - shape.ellipse.radiusY,
-                                                                       shape.ellipse.radiusX * 2,
-                                                                       shape.ellipse.radiusY * 2)];
+        CGFloat x = shape.ellipse.x * self.renderScale;
+        CGFloat y = shape.ellipse.y * self.renderScale;
+        CGFloat rx = shape.ellipse.radiusX * self.renderScale;
+        CGFloat ry = shape.ellipse.radiusY * self.renderScale;
+        bezierPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(x - rx, y - ry, rx * 2, ry * 2)];
     }
     if (bezierPath != nil) {
         CAShapeLayer *shapeLayer = [CAShapeLayer layer];
@@ -202,6 +215,11 @@
             CGFloat width = [shape[@"args"][@"width"] floatValue];
             CGFloat height = [shape[@"args"][@"height"] floatValue];
             CGFloat cornerRadius = [shape[@"args"][@"cornerRadius"] floatValue];
+            x *= self.renderScale;
+            y *= self.renderScale;
+            width *= self.renderScale;
+            height *= self.renderScale;
+            cornerRadius *= self.renderScale;
             bezierPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(x, y, width, height) cornerRadius:cornerRadius];
         }
     }
@@ -220,8 +238,11 @@
 - (CALayer *)createRectLayerWithProto:(SVGAProtoShapeEntity *)shape {
     UIBezierPath *bezierPath;
     if (shape.argsOneOfCase == SVGAProtoShapeEntity_Args_OneOfCase_Rect) {
-        bezierPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(shape.rect.x, shape.rect.y, shape.rect.width, shape.rect.height)
-                                                cornerRadius:shape.rect.cornerRadius];
+        bezierPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(shape.rect.x * self.renderScale,
+                                                                        shape.rect.y * self.renderScale,
+                                                                        shape.rect.width * self.renderScale,
+                                                                        shape.rect.height * self.renderScale)
+                                                cornerRadius:shape.rect.cornerRadius * self.renderScale];
     }
     if (bezierPath != nil) {
         CAShapeLayer *shapeLayer = [CAShapeLayer layer];
@@ -269,7 +290,7 @@
             }
         }
         if ([shape[@"styles"][@"strokeWidth"] isKindOfClass:[NSNumber class]]) {
-            shapeLayer.lineWidth = [shape[@"styles"][@"strokeWidth"] floatValue];
+            shapeLayer.lineWidth = [shape[@"styles"][@"strokeWidth"] floatValue] * self.renderScale;
         }
         if ([shape[@"styles"][@"lineCap"] isKindOfClass:[NSString class]]) {
             shapeLayer.lineCap = shape[@"styles"][@"lineCap"];
@@ -286,10 +307,10 @@
             }
             if (accept) {
                 if ([shape[@"styles"][@"lineDash"] count] == 3) {
-                    shapeLayer.lineDashPhase = [shape[@"styles"][@"lineDash"][2] floatValue];
+                    shapeLayer.lineDashPhase = [shape[@"styles"][@"lineDash"][2] floatValue] * self.renderScale;
                     shapeLayer.lineDashPattern = @[
-                                                   ([shape[@"styles"][@"lineDash"][0] floatValue] < 1.0 ? @(1.0) : shape[@"styles"][@"lineDash"][0]),
-                                                   ([shape[@"styles"][@"lineDash"][1] floatValue] < 0.1 ? @(0.1) : shape[@"styles"][@"lineDash"][1])
+                                                   @(MAX([shape[@"styles"][@"lineDash"][0] floatValue] * self.renderScale, 1.0)),
+                                                   @(MAX([shape[@"styles"][@"lineDash"][1] floatValue] * self.renderScale, 0.1))
                                                    ];
                 }
             }
@@ -319,7 +340,7 @@
                                                       blue:protoShape.styles.stroke.b
                                                      alpha:protoShape.styles.stroke.a].CGColor;
         }
-        shapeLayer.lineWidth = protoShape.styles.strokeWidth;
+        shapeLayer.lineWidth = protoShape.styles.strokeWidth * self.renderScale;
         switch (protoShape.styles.lineCap) {
             case SVGAProtoShapeEntity_ShapeStyle_LineCap_LineCapButt:
                 shapeLayer.lineCap = @"butt";
@@ -346,11 +367,11 @@
             default:
                 break;
         }
-        shapeLayer.lineDashPhase = protoShape.styles.lineDashIii;
+        shapeLayer.lineDashPhase = protoShape.styles.lineDashIii * self.renderScale;
         if (protoShape.styles.lineDashI > 0.0 || protoShape.styles.lineDashIi > 0.0) {
             shapeLayer.lineDashPattern = @[
-                                           (protoShape.styles.lineDashI < 1.0 ? @(1.0) : @(protoShape.styles.lineDashI)),
-                                           (protoShape.styles.lineDashIi < 0.1 ? @(0.1) : @(protoShape.styles.lineDashIi))
+                                           @(MAX(protoShape.styles.lineDashI * self.renderScale, 1.0)),
+                                           @(MAX(protoShape.styles.lineDashIi * self.renderScale, 0.1))
                                            ];
         }
         shapeLayer.miterLimit = protoShape.styles.miterLimit;
@@ -369,8 +390,8 @@
                                                                                           [shape[@"transform"][@"b"] floatValue],
                                                                                           [shape[@"transform"][@"c"] floatValue],
                                                                                           [shape[@"transform"][@"d"] floatValue],
-                                                                                          [shape[@"transform"][@"tx"] floatValue],
-                                                                                          [shape[@"transform"][@"ty"] floatValue])
+                                                                                          [shape[@"transform"][@"tx"] floatValue] * self.renderScale,
+                                                                                          [shape[@"transform"][@"ty"] floatValue] * self.renderScale)
                                                                     );
         }
     }
@@ -382,8 +403,8 @@
                                                                                       (CGFloat)protoShape.transform.b,
                                                                                       (CGFloat)protoShape.transform.c,
                                                                                       (CGFloat)protoShape.transform.d,
-                                                                                      (CGFloat)protoShape.transform.tx,
-                                                                                      (CGFloat)protoShape.transform.ty)
+                                                                                      (CGFloat)protoShape.transform.tx * self.renderScale,
+                                                                                      (CGFloat)protoShape.transform.ty * self.renderScale)
                                                                 );
     }
 }

@@ -7,6 +7,7 @@
 //
 
 #import <AVFoundation/AVFoundation.h>
+#import <ImageIO/ImageIO.h>
 #import "SVGAVideoEntity.h"
 #import "SVGABezierPath.h"
 #import "SVGAVideoSpriteEntity.h"
@@ -21,10 +22,12 @@
 @property (nonatomic, assign) int FPS;
 @property (nonatomic, assign) int frames;
 @property (nonatomic, copy) NSDictionary<NSString *, UIImage *> *images;
+@property (nonatomic, copy) NSDictionary<NSString *, NSData *> *imagesData;
 @property (nonatomic, copy) NSDictionary<NSString *, NSData *> *audiosData;
 @property (nonatomic, copy) NSArray<SVGAVideoSpriteEntity *> *sprites;
 @property (nonatomic, copy) NSArray<SVGAAudioEntity *> *audios;
 @property (nonatomic, copy) NSString *cacheDir;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *scaledImages;
 
 @end
 
@@ -45,12 +48,81 @@ static dispatch_semaphore_t videoSemaphore;
     });
 }
 
+- (UIImage *)imageForKey:(NSString *)key renderScale:(CGFloat)renderScale {
+    if (key.length == 0) return nil;
+    UIImage *originImage = self.images[key];
+    if (originImage == nil) return nil;
+
+    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    if (safeRenderScale >= 0.999) {
+        return originImage;
+    }
+
+    CGFloat pixelWidth = originImage.size.width * originImage.scale;
+    CGFloat pixelHeight = originImage.size.height * originImage.scale;
+    CGFloat maxPixelSize = MAX(pixelWidth, pixelHeight) * safeRenderScale;
+    if (maxPixelSize < 1) {
+        return originImage;
+    }
+
+    NSString *cacheKey = [NSString stringWithFormat:@"%@_%.3f", key, safeRenderScale];
+    UIImage *cachedImage = self.scaledImages[cacheKey];
+    if (cachedImage != nil) {
+        return cachedImage;
+    }
+
+    UIImage *scaledImage = [self downsampledImageForKey:key fallbackImage:originImage maxPixelSize:maxPixelSize];
+    if (scaledImage == nil) {
+        scaledImage = originImage;
+    }
+    self.scaledImages[cacheKey] = scaledImage;
+    return scaledImage;
+}
+
+- (UIImage *)downsampledImageForKey:(NSString *)key fallbackImage:(UIImage *)image maxPixelSize:(CGFloat)maxPixelSize {
+    if (image == nil || maxPixelSize <= 0) return nil;
+    NSData *imageData = self.imagesData[key];
+    if (imageData == nil) {
+        imageData = UIImagePNGRepresentation(image);
+    }
+    if (imageData == nil) return nil;
+
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)imageData, NULL);
+    if (source == NULL) return nil;
+
+    NSDictionary *options = @{
+        (__bridge NSString *)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
+        (__bridge NSString *)kCGImageSourceShouldCacheImmediately: @YES,
+        (__bridge NSString *)kCGImageSourceCreateThumbnailWithTransform: @YES,
+        (__bridge NSString *)kCGImageSourceThumbnailMaxPixelSize: @(ceil(maxPixelSize))
+    };
+    CGImageRef cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    CFRelease(source);
+    if (cgImage == NULL) return nil;
+
+    UIImage *downsampledImage = [UIImage imageWithCGImage:cgImage scale:image.scale orientation:image.imageOrientation];
+    CGImageRelease(cgImage);
+    return downsampledImage;
+}
+
+- (void)clearScaledImageCache {
+    [self.scaledImages removeAllObjects];
+}
+
+- (NSMutableDictionary<NSString *,UIImage *> *)scaledImages {
+    if (_scaledImages == nil) {
+        _scaledImages = [NSMutableDictionary dictionary];
+    }
+    return _scaledImages;
+}
+
 - (instancetype)initWithJSONObject:(NSDictionary *)JSONObject cacheDir:(NSString *)cacheDir {
     self = [super init];
     if (self) {
         _videoSize = CGSizeMake(100, 100);
         _FPS = 20;
         _images = @{};
+        _imagesData = @{};
         _cacheDir = cacheDir;
         [self resetMovieWithJSONObject:JSONObject];
     }
@@ -84,6 +156,7 @@ static dispatch_semaphore_t videoSemaphore;
 - (void)resetImagesWithJSONObject:(NSDictionary *)JSONObject {
     if ([JSONObject isKindOfClass:[NSDictionary class]]) {
         NSMutableDictionary<NSString *, UIImage *> *images = [[NSMutableDictionary alloc] init];
+        NSMutableDictionary<NSString *, NSData *> *imagesData = [[NSMutableDictionary alloc] init];
         NSDictionary<NSString *, NSString *> *JSONImages = JSONObject[@"images"];
         if ([JSONImages isKindOfClass:[NSDictionary class]]) {
             [JSONImages enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key, NSString * _Nonnull obj, BOOL * _Nonnull stop) {
@@ -94,13 +167,16 @@ static dispatch_semaphore_t videoSemaphore;
                     if (imageData != nil) {
                         UIImage *image = [[UIImage alloc] initWithData:imageData scale:2.0];
                         if (image != nil) {
-                            [images setObject:image forKey:[key stringByDeletingPathExtension]];
+                            NSString *imageKey = [key stringByDeletingPathExtension];
+                            [images setObject:image forKey:imageKey];
+                            [imagesData setObject:imageData forKey:imageKey];
                         }
                     }
                 }
             }];
         }
         self.images = images;
+        self.imagesData = imagesData;
     }
 }
 
@@ -126,6 +202,7 @@ static dispatch_semaphore_t videoSemaphore;
         _videoSize = CGSizeMake(100, 100);
         _FPS = 20;
         _images = @{};
+        _imagesData = @{};
         _cacheDir = cacheDir;
         [self resetMovieWithProtoObject:protoObject];
     }
@@ -150,6 +227,7 @@ static dispatch_semaphore_t videoSemaphore;
 
 - (void)resetImagesWithProtoObject:(SVGAProtoMovieEntity *)protoObject {
     NSMutableDictionary<NSString *, UIImage *> *images = [[NSMutableDictionary alloc] init];
+    NSMutableDictionary<NSString *, NSData *> *imagesData = [[NSMutableDictionary alloc] init];
     NSMutableDictionary<NSString *, NSData *> *audiosData = [[NSMutableDictionary alloc] init];
     NSDictionary *protoImages = [protoObject.images copy];
     for (NSString *key in protoImages) {
@@ -166,6 +244,7 @@ static dispatch_semaphore_t videoSemaphore;
                     UIImage *image = [[UIImage alloc] initWithData:imageData scale:2.0];
                     if (image != nil) {
                         [images setObject:image forKey:key];
+                        [imagesData setObject:imageData forKey:key];
                     }
                 }
             }
@@ -178,11 +257,13 @@ static dispatch_semaphore_t videoSemaphore;
                 UIImage *image = [[UIImage alloc] initWithData:protoImages[key] scale:2.0];
                 if (image != nil) {
                     [images setObject:image forKey:key];
+                    [imagesData setObject:protoImages[key] forKey:key];
                 }
             }
         }
     }
     self.images = images;
+    self.imagesData = imagesData;
     self.audiosData = audiosData;
 }
 
@@ -221,9 +302,36 @@ static dispatch_semaphore_t videoSemaphore;
     return  object;
 }
 
++ (void)setMemoryCacheCountLimit:(NSUInteger)countLimit totalCostLimit:(NSUInteger)totalCostLimit {
+    dispatch_semaphore_wait(videoSemaphore, DISPATCH_TIME_FOREVER);
+    videoCache.countLimit = countLimit;
+    videoCache.totalCostLimit = totalCostLimit;
+    dispatch_semaphore_signal(videoSemaphore);
+}
+
++ (void)clearMemoryCache {
+    dispatch_semaphore_wait(videoSemaphore, DISPATCH_TIME_FOREVER);
+    [videoCache removeAllObjects];
+    [weakCache removeAllObjects];
+    dispatch_semaphore_signal(videoSemaphore);
+}
+
 - (void)saveCache:(NSString *)cacheKey {
     dispatch_semaphore_wait(videoSemaphore, DISPATCH_TIME_FOREVER);
-    [videoCache setObject:self forKey:cacheKey];
+    NSUInteger cost = 1;
+    for (UIImage *image in self.images.allValues) {
+        CGSize imageSize = image.size;
+        CGFloat imageScale = image.scale > 0 ? image.scale : UIScreen.mainScreen.scale;
+        NSUInteger imageCost = (NSUInteger)(imageSize.width * imageScale * imageSize.height * imageScale * 4.0);
+        cost += imageCost;
+    }
+    for (NSData *audioData in self.audiosData.allValues) {
+        cost += audioData.length;
+    }
+    for (NSData *imageData in self.imagesData.allValues) {
+        cost += imageData.length;
+    }
+    [videoCache setObject:self forKey:cacheKey cost:cost];
     dispatch_semaphore_signal(videoSemaphore);
 }
 
@@ -242,4 +350,3 @@ static dispatch_semaphore_t videoSemaphore;
 @property (nonatomic, copy) NSString *matteKey;
 
 @end
-

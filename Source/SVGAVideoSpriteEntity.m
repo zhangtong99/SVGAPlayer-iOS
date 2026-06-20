@@ -62,12 +62,17 @@
 }
 
 - (SVGAContentLayer *)requestLayerWithBitmap:(UIImage *)bitmap {
-    SVGAContentLayer *layer = [[SVGAContentLayer alloc] initWithFrames:self.frames];
+    return [self requestLayerWithBitmap:bitmap renderScale:1.0];
+}
+
+- (SVGAContentLayer *)requestLayerWithBitmap:(UIImage *)bitmap renderScale:(CGFloat)renderScale {
+    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    SVGAContentLayer *layer = [[SVGAContentLayer alloc] initWithFrames:self.frames renderScale:safeRenderScale];
     if (bitmap != nil) {
-        layer.bitmapLayer = [[SVGABitmapLayer alloc] initWithFrames:self.frames];
+        layer.bitmapLayer = [[SVGABitmapLayer alloc] initWithFrames:self.frames renderScale:safeRenderScale];
         layer.bitmapLayer.contents = (__bridge id _Nullable)([bitmap CGImage]);
     }
-    layer.vectorLayer = [[SVGAVectorLayer alloc] initWithFrames:self.frames];
+    layer.vectorLayer = [[SVGAVectorLayer alloc] initWithFrames:self.frames renderScale:safeRenderScale];
     return layer;
 }
 

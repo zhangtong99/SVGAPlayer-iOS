@@ -31,11 +31,15 @@
 - (void)resetSpritesWithProtoObject:(SVGAProtoMovieEntity *)protoObject;
 - (void)resetAudiosWithProtoObject:(SVGAProtoMovieEntity *)protoObject;
 
+- (UIImage *)imageForKey:(NSString *)key renderScale:(CGFloat)renderScale;
+- (void)clearScaledImageCache;
+
 + (SVGAVideoEntity *)readCache:(NSString *)cacheKey;
+// 限制 SVGA 内存缓存规模，0 表示不限制对应维度。
++ (void)setMemoryCacheCountLimit:(NSUInteger)countLimit totalCostLimit:(NSUInteger)totalCostLimit;
++ (void)clearMemoryCache;
 // NSCache缓存
 - (void)saveCache:(NSString *)cacheKey;
 // NSMapTable弱缓存
 - (void)saveWeakCache:(NSString *)cacheKey;
 @end
-
-

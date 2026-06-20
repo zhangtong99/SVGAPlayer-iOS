@@ -25,4 +25,10 @@
 - (instancetype)initWithJSONObject:(NSDictionary *)JSONObject;
 - (instancetype)initWithProtoObject:(SVGAProtoFrameEntity *)protoObject;
 
+- (CGRect)layoutForRenderScale:(CGFloat)renderScale;
+- (CGAffineTransform)transformForRenderScale:(CGFloat)renderScale;
+- (CGFloat)nxForRenderScale:(CGFloat)renderScale;
+- (CGFloat)nyForRenderScale:(CGFloat)renderScale;
+- (CALayer *)maskLayerForRenderScale:(CGFloat)renderScale;
+
 @end

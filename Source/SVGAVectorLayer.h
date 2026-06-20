@@ -13,6 +13,7 @@
 @interface SVGAVectorLayer : CALayer
 
 - (instancetype)initWithFrames:(NSArray<SVGAVideoSpriteFrameEntity *> *)frames;
+- (instancetype)initWithFrames:(NSArray<SVGAVideoSpriteFrameEntity *> *)frames renderScale:(CGFloat)renderScale;
 
 - (void)stepToFrame:(NSInteger)frame;
 

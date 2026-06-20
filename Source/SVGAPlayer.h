@@ -25,6 +25,13 @@
 
 typedef void(^SVGAPlayerDynamicDrawingBlock)(CALayer *contentLayer, NSInteger frameIndex);
 
+typedef NS_ENUM(NSUInteger, SVGAPlayerAutoFitMode) {
+    SVGAPlayerAutoFitModeNone = 0,
+    SVGAPlayerAutoFitModeAspectFit = 1,
+    SVGAPlayerAutoFitModeAspectFill = 2,
+    SVGAPlayerAutoFitModeScaleToFill = 3,
+};
+
 @interface SVGAPlayer : UIView
 
 @property (nonatomic, weak) id<SVGAPlayerDelegate> delegate;
@@ -33,12 +40,19 @@ typedef void(^SVGAPlayerDynamicDrawingBlock)(CALayer *contentLayer, NSInteger fr
 @property (nonatomic, assign) IBInspectable BOOL clearsAfterStop;
 @property (nonatomic, copy) NSString *fillMode;
 @property (nonatomic, copy) NSRunLoopMode mainRunLoopMode;
+@property (nonatomic, assign) CGFloat renderScale;
+@property (nonatomic, assign) BOOL autoFitToBounds;
+@property (nonatomic, assign) SVGAPlayerAutoFitMode autoFitMode;
+@property (nonatomic, assign) NSInteger maximumFramesPerSecond;
+@property (nonatomic, assign) BOOL pausesWhenHiddenOrDetached;
 
 - (void)startAnimation;
 - (void)startAnimationWithRange:(NSRange)range reverse:(BOOL)reverse;
 - (void)pauseAnimation;
 - (void)stopAnimation;
 - (void)clear;
+- (void)pauseForVisibility;
+- (void)resumeIfNeeded;
 - (void)stepToFrame:(NSInteger)frame andPlay:(BOOL)andPlay;
 - (void)stepToPercentage:(CGFloat)percentage andPlay:(BOOL)andPlay;
 

@@ -19,8 +19,10 @@
 @property (nonatomic, strong) SVGABitmapLayer *bitmapLayer;
 @property (nonatomic, strong) SVGAVectorLayer *vectorLayer;
 @property (nonatomic, strong) CATextLayer *textLayer;
+@property (nonatomic, assign) CGFloat renderScale;
 
 - (instancetype)initWithFrames:(NSArray<SVGAVideoSpriteFrameEntity *> *)frames;
+- (instancetype)initWithFrames:(NSArray<SVGAVideoSpriteFrameEntity *> *)frames renderScale:(CGFloat)renderScale;
 
 - (void)stepToFrame:(NSInteger)frame;
 - (void)resetTextLayerProperties:(NSAttributedString *)attributedString;

@@ -17,6 +17,13 @@
 
 @implementation SVGABezierPath
 
+- (instancetype)init {
+    if (self = [super init]) {
+        _renderScale = 1.0;
+    }
+    return self;
+}
+
 - (void)setValues:(nonnull NSString *)values {
     if (!self.displaying) {
         self.backValues = values;
@@ -102,15 +109,16 @@
 }
 
 - (CGFloat)argFloat:(CGFloat)value relativeValue:(CGFloat)relativeValue {
-    return value + relativeValue;
+    return (value * self.renderScale) + relativeValue;
 }
 
 - (CGPoint)argPoint:(CGPoint)point relative:(BOOL)relative {
+    CGPoint scaledPoint = CGPointMake(point.x * self.renderScale, point.y * self.renderScale);
     if (relative) {
-        return CGPointMake(point.x + self.currentPoint.x, point.y + self.currentPoint.y);
+        return CGPointMake(scaledPoint.x + self.currentPoint.x, scaledPoint.y + self.currentPoint.y);
     }
     else {
-        return point;
+        return scaledPoint;
     }
 }
 

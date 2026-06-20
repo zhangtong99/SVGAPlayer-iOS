@@ -21,11 +21,16 @@
 @implementation SVGAContentLayer
 
 - (instancetype)initWithFrames:(NSArray *)frames {
+    return [self initWithFrames:frames renderScale:1.0];
+}
+
+- (instancetype)initWithFrames:(NSArray *)frames renderScale:(CGFloat)renderScale {
     self = [super init];
     if (self) {
         self.backgroundColor = [UIColor clearColor].CGColor;
         self.masksToBounds = NO;
         _frames = frames;
+        _renderScale = renderScale > 0 ? renderScale : 1.0;
         _textLayerAlignment = NSTextAlignmentCenter;
         [self stepToFrame:0];
     }
@@ -41,20 +46,21 @@
         if (frameItem.alpha > 0.0) {
             self.hidden = NO;
             self.opacity = frameItem.alpha;
-            CGFloat nx = frameItem.nx;
-            CGFloat ny = frameItem.ny;
+            CGFloat nx = [frameItem nxForRenderScale:self.renderScale];
+            CGFloat ny = [frameItem nyForRenderScale:self.renderScale];
             self.position = CGPointMake(0, 0);
             self.transform = CATransform3DIdentity;
-            self.frame = frameItem.layout;
-            self.transform = CATransform3DMakeAffineTransform(frameItem.transform);
+            self.frame = [frameItem layoutForRenderScale:self.renderScale];
+            self.transform = CATransform3DMakeAffineTransform([frameItem transformForRenderScale:self.renderScale]);
             CGFloat offsetX = self.frame.origin.x - nx;
             CGFloat offsetY = self.frame.origin.y - ny;
             self.position = CGPointMake(self.position.x - offsetX, self.position.y - offsetY);
-            if (frameItem.maskLayer != nil) {
-                if ([frameItem.maskLayer isKindOfClass:[CAShapeLayer class]]) {
+            CALayer *maskLayer = [frameItem maskLayerForRenderScale:self.renderScale];
+            if (maskLayer != nil) {
+                if ([maskLayer isKindOfClass:[CAShapeLayer class]]) {
                     CAShapeLayer *cloneShapeLayer = [CAShapeLayer layer];
-                    cloneShapeLayer.path = [(CAShapeLayer *)frameItem.maskLayer path];
-                    cloneShapeLayer.fillColor = [(CAShapeLayer *)frameItem.maskLayer fillColor];
+                    cloneShapeLayer.path = [(CAShapeLayer *)maskLayer path];
+                    cloneShapeLayer.fillColor = [(CAShapeLayer *)maskLayer fillColor];
                     self.mask = cloneShapeLayer;
                 }
             }

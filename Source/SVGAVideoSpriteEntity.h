@@ -22,5 +22,6 @@
 - (instancetype)initWithProtoObject:(SVGAProtoSpriteEntity *)protoObject;
 
 - (SVGAContentLayer *)requestLayerWithBitmap:(UIImage *)bitmap;
+- (SVGAContentLayer *)requestLayerWithBitmap:(UIImage *)bitmap renderScale:(CGFloat)renderScale;
 
 @end

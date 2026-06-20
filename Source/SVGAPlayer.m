@@ -15,6 +15,7 @@
 #import "SVGAVectorLayer.h"
 #import "SVGAAudioLayer.h"
 #import "SVGAAudioEntity.h"
+#import <math.h>
 
 @interface SVGAPlayer ()
 
@@ -31,6 +32,8 @@
 @property (nonatomic, assign) NSRange currentRange;
 @property (nonatomic, assign) BOOL forwardAnimating;
 @property (nonatomic, assign) BOOL reversing;
+@property (nonatomic, assign) NSInteger frameVariable;
+@property (nonatomic, assign) BOOL wasAnimatingBeforeVisibilityPause;
 
 @end 
 
@@ -60,16 +63,54 @@
 - (void)initPlayer {
     self.contentMode = UIViewContentModeTop;
     self.clearsAfterStop = YES;
+    self.renderScale = 1.0;
+    self.autoFitMode = SVGAPlayerAutoFitModeAspectFit;
+    self.frameVariable = 1;
 }
 
 - (void)willMoveToSuperview:(UIView *)newSuperview {
     [super willMoveToSuperview:newSuperview];
     if (newSuperview == nil) {
-        [self stopAnimation:YES];
+        if (self.pausesWhenHiddenOrDetached) {
+            [self pauseForVisibility];
+        } else {
+            [self stopAnimation:YES];
+        }
+    }
+}
+
+- (void)didMoveToSuperview {
+    [super didMoveToSuperview];
+    if (self.superview != nil) {
+        [self resumeIfNeeded];
+    }
+}
+
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    if (self.window == nil) {
+        [self pauseForVisibility];
+    } else {
+        [self resumeIfNeeded];
+    }
+}
+
+- (void)setHidden:(BOOL)hidden {
+    BOOL changed = self.hidden != hidden;
+    [super setHidden:hidden];
+    if (!changed) return;
+    if (hidden) {
+        [self pauseForVisibility];
+    } else {
+        [self resumeIfNeeded];
     }
 }
 
 - (void)startAnimation {
+    if (self.pausesWhenHiddenOrDetached && ![self isVisibleForPlayback]) {
+        self.wasAnimatingBeforeVisibilityPause = YES;
+        return;
+    }
     if (self.videoItem == nil) {
         NSLog(@"videoItem could not be nil！");
         return;
@@ -83,12 +124,16 @@
         return;
     }
     self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(next)];
-    self.displayLink.preferredFramesPerSecond = 60 / self.videoItem.FPS;
+    self.displayLink.preferredFramesPerSecond = [self preferredFramesPerSecond];
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.mainRunLoopMode];
     self.forwardAnimating = !self.reversing;
 }
 
 - (void)startAnimationWithRange:(NSRange)range reverse:(BOOL)reverse {
+    if (self.pausesWhenHiddenOrDetached && ![self isVisibleForPlayback]) {
+        self.wasAnimatingBeforeVisibilityPause = YES;
+        return;
+    }
     if (self.videoItem == nil) {
         NSLog(@"videoItem could not be nil！");
         return;
@@ -112,7 +157,7 @@
     }
     self.forwardAnimating = !self.reversing;
     self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(next)];
-    self.displayLink.preferredFramesPerSecond = 60 / self.videoItem.FPS;
+    self.displayLink.preferredFramesPerSecond = [self preferredFramesPerSecond];
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.mainRunLoopMode];
 }
 
@@ -125,6 +170,7 @@
 }
 
 - (void)stopAnimation:(BOOL)clear {
+    self.wasAnimatingBeforeVisibilityPause = NO;
     self.forwardAnimating = NO;
     if (self.displayLink != nil) {
         [self.displayLink invalidate];
@@ -171,7 +217,7 @@
             return;
         }
         self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(next)];
-        self.displayLink.preferredFramesPerSecond = 60 / self.videoItem.FPS;
+        self.displayLink.preferredFramesPerSecond = [self preferredFramesPerSecond];
         [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:self.mainRunLoopMode];
     }
 }
@@ -186,7 +232,7 @@
 
 - (void)draw {
     self.drawLayer = [[CALayer alloc] init];
-    self.drawLayer.frame = CGRectMake(0, 0, self.videoItem.videoSize.width, self.videoItem.videoSize.height);
+    self.drawLayer.frame = CGRectMake(0, 0, self.videoItem.videoSize.width * self.renderScale, self.videoItem.videoSize.height * self.renderScale);
     self.drawLayer.masksToBounds = true;
     NSMutableDictionary *tempHostLayers = [NSMutableDictionary dictionary];
     NSMutableArray *tempContentLayers = [NSMutableArray array];
@@ -199,10 +245,10 @@
                 bitmap = self.dynamicObjects[bitmapKey];
             }
             else {
-                bitmap = self.videoItem.images[bitmapKey];
+                bitmap = [self.videoItem imageForKey:bitmapKey renderScale:self.renderScale];
             }
         }
-        SVGAContentLayer *contentLayer = [sprite requestLayerWithBitmap:bitmap];
+        SVGAContentLayer *contentLayer = [sprite requestLayerWithBitmap:bitmap renderScale:self.renderScale];
         contentLayer.imageKey = sprite.imageKey;
         [tempContentLayers addObject:contentLayer];
         if ([sprite.imageKey hasSuffix:@".matte"]) {
@@ -258,74 +304,94 @@
 }
 
 - (void)resize {
-    if (self.contentMode == UIViewContentModeScaleAspectFit) {
-        CGFloat videoRatio = self.videoItem.videoSize.width / self.videoItem.videoSize.height;
+    CGSize renderSize = CGSizeMake(self.videoItem.videoSize.width * self.renderScale, self.videoItem.videoSize.height * self.renderScale);
+    if (renderSize.width <= 0 || renderSize.height <= 0 || self.bounds.size.width <= 0 || self.bounds.size.height <= 0) return;
+
+    UIViewContentMode resizeMode = self.contentMode;
+    if (self.autoFitToBounds) {
+        switch (self.autoFitMode) {
+            case SVGAPlayerAutoFitModeAspectFit:
+                resizeMode = UIViewContentModeScaleAspectFit;
+                break;
+            case SVGAPlayerAutoFitModeAspectFill:
+                resizeMode = UIViewContentModeScaleAspectFill;
+                break;
+            case SVGAPlayerAutoFitModeScaleToFill:
+                resizeMode = UIViewContentModeScaleToFill;
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (resizeMode == UIViewContentModeScaleAspectFit) {
+        CGFloat videoRatio = renderSize.width / renderSize.height;
         CGFloat layerRatio = self.bounds.size.width / self.bounds.size.height;
         if (videoRatio > layerRatio) {
-            CGFloat ratio = self.bounds.size.width / self.videoItem.videoSize.width;
+            CGFloat ratio = self.bounds.size.width / renderSize.width;
             CGPoint offset = CGPointMake(
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.width,
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.height
-                                         - (self.bounds.size.height - self.videoItem.videoSize.height * ratio) / 2.0
+                                         (1.0 - ratio) / 2.0 * renderSize.width,
+                                         (1.0 - ratio) / 2.0 * renderSize.height
+                                         - (self.bounds.size.height - renderSize.height * ratio) / 2.0
                                          );
             self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(ratio, 0, 0, ratio, -offset.x, -offset.y));
         }
         else {
-            CGFloat ratio = self.bounds.size.height / self.videoItem.videoSize.height;
+            CGFloat ratio = self.bounds.size.height / renderSize.height;
             CGPoint offset = CGPointMake(
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.width - (self.bounds.size.width - self.videoItem.videoSize.width * ratio) / 2.0,
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.height);
+                                         (1.0 - ratio) / 2.0 * renderSize.width - (self.bounds.size.width - renderSize.width * ratio) / 2.0,
+                                         (1.0 - ratio) / 2.0 * renderSize.height);
             self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(ratio, 0, 0, ratio, -offset.x, -offset.y));
         }
     }
-    else if (self.contentMode == UIViewContentModeScaleAspectFill) {
-        CGFloat videoRatio = self.videoItem.videoSize.width / self.videoItem.videoSize.height;
+    else if (resizeMode == UIViewContentModeScaleAspectFill) {
+        CGFloat videoRatio = renderSize.width / renderSize.height;
         CGFloat layerRatio = self.bounds.size.width / self.bounds.size.height;
         if (videoRatio < layerRatio) {
-            CGFloat ratio = self.bounds.size.width / self.videoItem.videoSize.width;
+            CGFloat ratio = self.bounds.size.width / renderSize.width;
             CGPoint offset = CGPointMake(
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.width,
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.height
-                                         - (self.bounds.size.height - self.videoItem.videoSize.height * ratio) / 2.0
+                                         (1.0 - ratio) / 2.0 * renderSize.width,
+                                         (1.0 - ratio) / 2.0 * renderSize.height
+                                         - (self.bounds.size.height - renderSize.height * ratio) / 2.0
                                          );
             self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(ratio, 0, 0, ratio, -offset.x, -offset.y));
         }
         else {
-            CGFloat ratio = self.bounds.size.height / self.videoItem.videoSize.height;
+            CGFloat ratio = self.bounds.size.height / renderSize.height;
             CGPoint offset = CGPointMake(
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.width - (self.bounds.size.width - self.videoItem.videoSize.width * ratio) / 2.0,
-                                         (1.0 - ratio) / 2.0 * self.videoItem.videoSize.height);
+                                         (1.0 - ratio) / 2.0 * renderSize.width - (self.bounds.size.width - renderSize.width * ratio) / 2.0,
+                                         (1.0 - ratio) / 2.0 * renderSize.height);
             self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(ratio, 0, 0, ratio, -offset.x, -offset.y));
         }
     }
-    else if (self.contentMode == UIViewContentModeTop) {
-        CGFloat scaleX = self.frame.size.width / self.videoItem.videoSize.width;
-        CGPoint offset = CGPointMake((1.0 - scaleX) / 2.0 * self.videoItem.videoSize.width, (1 - scaleX) / 2.0 * self.videoItem.videoSize.height);
+    else if (resizeMode == UIViewContentModeTop) {
+        CGFloat scaleX = self.frame.size.width / renderSize.width;
+        CGPoint offset = CGPointMake((1.0 - scaleX) / 2.0 * renderSize.width, (1 - scaleX) / 2.0 * renderSize.height);
         self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleX, 0, 0, scaleX, -offset.x, -offset.y));
     }
-    else if (self.contentMode == UIViewContentModeBottom) {
-        CGFloat scaleX = self.frame.size.width / self.videoItem.videoSize.width;
+    else if (resizeMode == UIViewContentModeBottom) {
+        CGFloat scaleX = self.frame.size.width / renderSize.width;
         CGPoint offset = CGPointMake(
-                                     (1.0 - scaleX) / 2.0 * self.videoItem.videoSize.width,
-                                     (1.0 - scaleX) / 2.0 * self.videoItem.videoSize.height);
-        self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleX, 0, 0, scaleX, -offset.x, -offset.y + self.frame.size.height - self.videoItem.videoSize.height * scaleX));
+                                     (1.0 - scaleX) / 2.0 * renderSize.width,
+                                     (1.0 - scaleX) / 2.0 * renderSize.height);
+        self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleX, 0, 0, scaleX, -offset.x, -offset.y + self.frame.size.height - renderSize.height * scaleX));
     }
-    else if (self.contentMode == UIViewContentModeLeft) {
-        CGFloat scaleY = self.frame.size.height / self.videoItem.videoSize.height;
-        CGPoint offset = CGPointMake((1.0 - scaleY) / 2.0 * self.videoItem.videoSize.width, (1 - scaleY) / 2.0 * self.videoItem.videoSize.height);
+    else if (resizeMode == UIViewContentModeLeft) {
+        CGFloat scaleY = self.frame.size.height / renderSize.height;
+        CGPoint offset = CGPointMake((1.0 - scaleY) / 2.0 * renderSize.width, (1 - scaleY) / 2.0 * renderSize.height);
         self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleY, 0, 0, scaleY, -offset.x, -offset.y));
     }
-    else if (self.contentMode == UIViewContentModeRight) {
-        CGFloat scaleY = self.frame.size.height / self.videoItem.videoSize.height;
+    else if (resizeMode == UIViewContentModeRight) {
+        CGFloat scaleY = self.frame.size.height / renderSize.height;
         CGPoint offset = CGPointMake(
-                                     (1.0 - scaleY) / 2.0 * self.videoItem.videoSize.width,
-                                     (1.0 - scaleY) / 2.0 * self.videoItem.videoSize.height);
-        self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleY, 0, 0, scaleY, -offset.x + self.frame.size.width - self.videoItem.videoSize.width * scaleY, -offset.y));
+                                     (1.0 - scaleY) / 2.0 * renderSize.width,
+                                     (1.0 - scaleY) / 2.0 * renderSize.height);
+        self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleY, 0, 0, scaleY, -offset.x + self.frame.size.width - renderSize.width * scaleY, -offset.y));
     }
     else {
-        CGFloat scaleX = self.frame.size.width / self.videoItem.videoSize.width;
-        CGFloat scaleY = self.frame.size.height / self.videoItem.videoSize.height;
-        CGPoint offset = CGPointMake((1.0 - scaleX) / 2.0 * self.videoItem.videoSize.width, (1 - scaleY) / 2.0 * self.videoItem.videoSize.height);
+        CGFloat scaleX = self.frame.size.width / renderSize.width;
+        CGFloat scaleY = self.frame.size.height / renderSize.height;
+        CGPoint offset = CGPointMake((1.0 - scaleX) / 2.0 * renderSize.width, (1 - scaleY) / 2.0 * renderSize.height);
         self.drawLayer.transform = CATransform3DMakeAffineTransform(CGAffineTransformMake(scaleX, 0, 0, scaleY, -offset.x, -offset.y));
     }
 }
@@ -360,14 +426,14 @@
 
 - (void)next {
     if (self.reversing) {
-        self.currentFrame--;
+        self.currentFrame -= self.frameVariable;
         if (self.currentFrame < (NSInteger)MAX(0, self.currentRange.location)) {
             self.currentFrame = MIN(self.videoItem.frames - 1, self.currentRange.location + self.currentRange.length - 1);
             self.loopCount++;
         }
     }
     else {
-        self.currentFrame++;
+        self.currentFrame += self.frameVariable;
         if (self.currentFrame >= MIN(self.videoItem.frames, self.currentRange.location + self.currentRange.length)) {
             self.currentFrame = MAX(0, self.currentRange.location);
             [self clearAudios];
@@ -411,6 +477,17 @@
 //    if (_videoItem == videoItem) {
 //        return;
 //    }
+    if (videoItem == nil) {
+        [_videoItem clearScaledImageCache];
+        _videoItem = nil;
+        _currentRange = NSMakeRange(0, 0);
+        _reversing = NO;
+        _currentFrame = 0;
+        _loopCount = 0;
+        [self stopAnimation:YES];
+        [self clearDynamicObjects];
+        return;
+    }
     _videoItem = videoItem;
     _currentRange = NSMakeRange(0, videoItem.frames);
     _reversing = NO;
@@ -420,6 +497,69 @@
         [self clear];
         [self draw];
     }];
+}
+
+- (void)setRenderScale:(CGFloat)renderScale {
+    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    if (_renderScale == safeRenderScale) return;
+    _renderScale = safeRenderScale;
+    if (self.videoItem != nil && self.drawLayer != nil) {
+        [self clear];
+        [self draw];
+    }
+}
+
+- (void)setAutoFitToBounds:(BOOL)autoFitToBounds {
+    if (_autoFitToBounds == autoFitToBounds) return;
+    _autoFitToBounds = autoFitToBounds;
+    if (self.drawLayer != nil) {
+        [self resize];
+    }
+}
+
+- (void)setAutoFitMode:(SVGAPlayerAutoFitMode)autoFitMode {
+    if (_autoFitMode == autoFitMode) return;
+    _autoFitMode = autoFitMode;
+    if (autoFitMode != SVGAPlayerAutoFitModeNone) {
+        _autoFitToBounds = YES;
+    }
+    if (self.drawLayer != nil) {
+        [self resize];
+    }
+}
+
+- (NSInteger)preferredFramesPerSecond {
+    NSInteger fps = MAX(self.videoItem.FPS, 1);
+    self.frameVariable = 1;
+    if (self.maximumFramesPerSecond > 0) {
+        NSInteger maxFPS = MAX(self.maximumFramesPerSecond, 1);
+        if (fps > maxFPS) {
+            self.frameVariable = MAX((NSInteger)ceil((double)fps / (double)maxFPS), 1);
+            fps = MAX(fps / self.frameVariable, 1);
+        }
+    }
+    return fps;
+}
+
+- (BOOL)isVisibleForPlayback {
+    return !(self.hidden || self.alpha <= 0.01 || self.superview == nil || self.window == nil);
+}
+
+- (void)pauseForVisibility {
+    if (!self.pausesWhenHiddenOrDetached) return;
+    BOOL shouldResume = self.wasAnimatingBeforeVisibilityPause || self.displayLink != nil;
+    if (self.displayLink != nil) {
+        [self pauseAnimation];
+    }
+    self.wasAnimatingBeforeVisibilityPause = shouldResume;
+}
+
+- (void)resumeIfNeeded {
+    if (!self.pausesWhenHiddenOrDetached) return;
+    if (!self.wasAnimatingBeforeVisibilityPause) return;
+    if (![self isVisibleForPlayback]) return;
+    self.wasAnimatingBeforeVisibilityPause = NO;
+    [self startAnimationWithRange:self.currentRange reverse:self.reversing];
 }
 
 #pragma mark - Dynamic Object
