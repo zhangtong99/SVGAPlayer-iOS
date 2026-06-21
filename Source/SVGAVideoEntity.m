@@ -8,6 +8,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <ImageIO/ImageIO.h>
+#import <math.h>
 #import "SVGAVideoEntity.h"
 #import "SVGABezierPath.h"
 #import "SVGAVideoSpriteEntity.h"
@@ -27,7 +28,9 @@
 @property (nonatomic, copy) NSArray<SVGAVideoSpriteEntity *> *sprites;
 @property (nonatomic, copy) NSArray<SVGAAudioEntity *> *audios;
 @property (nonatomic, copy) NSString *cacheDir;
-@property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *scaledImages;
+@property (nonatomic, strong) NSCache<NSString *, UIImage *> *scaledImages;
+
++ (CGFloat)quantizedRenderScale:(CGFloat)renderScale;
 
 @end
 
@@ -53,7 +56,7 @@ static dispatch_semaphore_t videoSemaphore;
     UIImage *originImage = self.images[key];
     if (originImage == nil) return nil;
 
-    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    CGFloat safeRenderScale = [self.class quantizedRenderScale:renderScale];
     if (safeRenderScale >= 0.999) {
         return originImage;
     }
@@ -66,7 +69,7 @@ static dispatch_semaphore_t videoSemaphore;
     }
 
     NSString *cacheKey = [NSString stringWithFormat:@"%@_%.3f", key, safeRenderScale];
-    UIImage *cachedImage = self.scaledImages[cacheKey];
+    UIImage *cachedImage = [self.scaledImages objectForKey:cacheKey];
     if (cachedImage != nil) {
         return cachedImage;
     }
@@ -75,16 +78,17 @@ static dispatch_semaphore_t videoSemaphore;
     if (scaledImage == nil) {
         scaledImage = originImage;
     }
-    self.scaledImages[cacheKey] = scaledImage;
+    NSUInteger cost = 0;
+    if (scaledImage.CGImage != nil) {
+        cost = CGImageGetBytesPerRow(scaledImage.CGImage) * CGImageGetHeight(scaledImage.CGImage);
+    }
+    [self.scaledImages setObject:scaledImage forKey:cacheKey cost:cost];
     return scaledImage;
 }
 
 - (UIImage *)downsampledImageForKey:(NSString *)key fallbackImage:(UIImage *)image maxPixelSize:(CGFloat)maxPixelSize {
     if (image == nil || maxPixelSize <= 0) return nil;
     NSData *imageData = self.imagesData[key];
-    if (imageData == nil) {
-        imageData = UIImagePNGRepresentation(image);
-    }
     if (imageData == nil) return nil;
 
     CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)imageData, NULL);
@@ -109,11 +113,21 @@ static dispatch_semaphore_t videoSemaphore;
     [self.scaledImages removeAllObjects];
 }
 
-- (NSMutableDictionary<NSString *,UIImage *> *)scaledImages {
+- (NSCache<NSString *,UIImage *> *)scaledImages {
     if (_scaledImages == nil) {
-        _scaledImages = [NSMutableDictionary dictionary];
+        _scaledImages = [[NSCache alloc] init];
+        _scaledImages.countLimit = 24;
+        _scaledImages.totalCostLimit = 8 * 1024 * 1024;
     }
     return _scaledImages;
+}
+
++ (CGFloat)quantizedRenderScale:(CGFloat)renderScale {
+    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    if (safeRenderScale >= 0.999) return 1.0;
+    safeRenderScale = MAX(safeRenderScale, 0.1);
+    CGFloat bucket = 0.125;
+    return MAX(ceil(safeRenderScale / bucket) * bucket, bucket);
 }
 
 - (instancetype)initWithJSONObject:(NSDictionary *)JSONObject cacheDir:(NSString *)cacheDir {

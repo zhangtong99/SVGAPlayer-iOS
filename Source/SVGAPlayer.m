@@ -500,13 +500,21 @@
 }
 
 - (void)setRenderScale:(CGFloat)renderScale {
-    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    CGFloat safeRenderScale = [self quantizedRenderScale:renderScale];
     if (_renderScale == safeRenderScale) return;
     _renderScale = safeRenderScale;
     if (self.videoItem != nil && self.drawLayer != nil) {
         [self clear];
         [self draw];
     }
+}
+
+- (CGFloat)quantizedRenderScale:(CGFloat)renderScale {
+    CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
+    if (safeRenderScale >= 0.999) return 1.0;
+    safeRenderScale = MAX(safeRenderScale, 0.1);
+    CGFloat bucket = 0.125;
+    return MAX(ceil(safeRenderScale / bucket) * bucket, bucket);
 }
 
 - (void)setAutoFitToBounds:(BOOL)autoFitToBounds {
