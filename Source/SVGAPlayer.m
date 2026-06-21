@@ -513,7 +513,7 @@
     CGFloat safeRenderScale = renderScale > 0 ? renderScale : 1.0;
     if (safeRenderScale >= 0.999) return 1.0;
     safeRenderScale = MAX(safeRenderScale, 0.1);
-    CGFloat bucket = 0.125;
+    CGFloat bucket = 0.05;
     return MAX(ceil(safeRenderScale / bucket) * bucket, bucket);
 }
 
